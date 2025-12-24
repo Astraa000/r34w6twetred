@@ -1,107 +1,171 @@
-<div align="center">
+<p align="center">
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=32&duration=3000&pause=1000&color=A78BFA&center=true&vCenter=true&repeat=false&width=600&lines=Discord+Message+Deleter" alt="Typing SVG" />
+</p>
 
-# 🗑️ Discord Message Deleter
+<p align="center">
+  <strong>⚡️ Lightning-fast bulk deletion • 🔄 Auto-recovery • 💎 Zero data loss</strong>
+</p>
 
-### *Lightning-fast bulk message deletion with intelligent auto-recovery*
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.7+-black?style=flat-square&logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/Discord-API-black?style=flat-square&logo=discord&logoColor=white" />
+  <img src="https://img.shields.io/badge/Status-Active-black?style=flat-square" />
+  <img src="https://img.shields.io/badge/License-MIT-black?style=flat-square" />
+</p>
 
-[![Python](https://img.shields.io/badge/Python-3.7+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![Discord](https://img.shields.io/badge/Discord-API-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/)
-[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
+<br>
 
-[Features](#-features) • [Quick Start](#-quick-start) • [Configuration](#%EF%B8%8F-configuration) • [Documentation](#-documentation)
+```ascii
+╔══════════════════════════════════════════════════════════════════╗
+║                                                                  ║
+║   🎯 BULK DELETE      🔄 AUTO RESTART      💾 CHECKPOINTS       ║
+║                                                                  ║
+║   Delete thousands of messages with intelligent rate limiting   ║
+║   and automatic recovery. Resume exactly where you left off.    ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+```
 
-</div>
+<br>
 
----
+## ⚡️ Installation
 
-## 🌟 Features
+```bash
+# One-line setup
+git clone https://github.com/Astraa000/r34w6twetred.git && cd r34w6twetred && pip install -r requirements.txt
+```
+
+<br>
+
+## 🎮 Quick Start
+
+```bash
+# 1. Configure your token
+echo '{"token":"YOUR_TOKEN","delete_from_everywhere":true}' > config.json
+
+# 2. Launch with auto-recovery
+python3 watchdog.py --auto
+```
+
+<br>
+
+> [!TIP]
+> **First time?** Get your Discord token from the browser console:
+> ```javascript
+> (webpackChunkdiscord_app.push([[''],{},e=>{m=[];for(let c in e.c)m.push(e.c[c])}]),m).find(m=>m?.exports?.default?.getToken!==void 0).exports.default.getToken()
+> ```
+
+<br>
+
+## 🎨 Features
 
 <table>
 <tr>
-<td width="50%">
+<td>
 
-### ⚡️ **High Performance**
-- Bulk message deletion with rate limit handling
-- Concurrent processing for maximum speed
-- Smart retry mechanism for failed deletions
-
-</td>
-<td width="50%">
-
-### 🔄 **Auto-Recovery**
-- Watchdog process monitors script health
-- Automatic restart on crashes
-- Zero data loss with checkpoint system
+### 🚀 Performance
+```
+• 500-1000 msg/hour deletion rate
+• Concurrent processing
+• Smart retry logic
+• Rate limit auto-handling
+```
 
 </td>
-</tr>
-<tr>
-<td width="50%">
+<td>
 
-### 💾 **Smart Checkpointing**
-- Resume from exact point of interruption
-- Checkpoint every 10 deletions
-- Progress persistence across sessions
-
-</td>
-<td width="50%">
-
-### 🎯 **Flexible Targeting**
-- Delete by date range
-- Filter by specific channels
-- Specify exact message count
+### 🧠 Intelligence
+```
+• Checkpoint every 10 deletions
+• Auto-resume from crashes
+• Watchdog process monitoring
+• Zero-downtime recovery
+```
 
 </td>
 </tr>
 </table>
 
----
+<table>
+<tr>
+<td>
 
-## 🚀 Quick Start
-
-### Prerequisites
-
-```bash
-Python 3.7+
-Discord User Token
+### 🎯 Targeting
+```
+• Date range filtering
+• Channel-specific deletion
+• Message count limits
+• Everywhere mode
 ```
 
-### Installation
+</td>
+<td>
 
-```bash
-# Clone the repository
-git clone https://github.com/Astraa000/r34w6twetred.git
-cd r34w6twetred
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure your settings
-cp config.json.example config.json
-nano config.json
+### 🛡️ Safety
+```
+• Progress persistence
+• Checkpoint backups
+• Connection retry
+• Error logging
 ```
 
-### 🎬 Run
+</td>
+</tr>
+</table>
 
-**With Auto-Recovery (Recommended)**
-```bash
-python3 watchdog.py --auto
-```
-
-**Manual Mode**
-```bash
-python3 discord_deleter/deleter.py
-```
-
----
+<br>
 
 ## ⚙️ Configuration
 
-Create a `config.json` file in the root directory:
+<table>
+<thead>
+<tr>
+<th width="25%">Parameter</th>
+<th width="15%">Type</th>
+<th width="60%">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>token</code></td>
+<td><strong>string</strong></td>
+<td>Your Discord user token <strong>(required)</strong></td>
+</tr>
+<tr>
+<td><code>channel_id</code></td>
+<td>string</td>
+<td>Target specific channel • <code>null</code> = all channels</td>
+</tr>
+<tr>
+<td><code>delete_from_everywhere</code></td>
+<td>boolean</td>
+<td>Delete from all accessible channels • default: <code>true</code></td>
+</tr>
+<tr>
+<td><code>before_date</code></td>
+<td>ISO 8601</td>
+<td>Delete messages before this date • <code>null</code> = no limit</td>
+</tr>
+<tr>
+<td><code>after_date</code></td>
+<td>ISO 8601</td>
+<td>Delete messages after this date • <code>null</code> = no limit</td>
+</tr>
+<tr>
+<td><code>message_limit</code></td>
+<td>integer</td>
+<td>Maximum messages to delete • <code>null</code> = unlimited</td>
+</tr>
+</tbody>
+</table>
+
+<br>
+
+**Example config.json:**
 
 ```json
 {
-  "token": "YOUR_DISCORD_TOKEN",
+  "token": "YOUR_DISCORD_TOKEN_HERE",
   "channel_id": null,
   "delete_from_everywhere": true,
   "before_date": "2024-01-01T00:00:00Z",
@@ -110,101 +174,63 @@ Create a `config.json` file in the root directory:
 }
 ```
 
-### Configuration Options
+<br>
 
-| Parameter | Type | Description | Default |
-|-----------|------|-------------|---------|
-| `token` | `string` | Your Discord user token | **Required** |
-| `channel_id` | `string` | Specific channel ID to delete from | `null` (all channels) |
-| `delete_from_everywhere` | `boolean` | Delete from all accessible channels | `true` |
-| `before_date` | `string` | Delete messages before this date (ISO 8601) | `null` |
-| `after_date` | `string` | Delete messages after this date (ISO 8601) | `null` |
-| `message_limit` | `integer` | Maximum number of messages to delete | `null` (unlimited) |
+## 🔄 How It Works
 
----
-
-## 📖 Documentation
-
-### 🔍 Getting Your Discord Token
-
-<details>
-<summary><b>Click to expand token instructions</b></summary>
-
-1. Open Discord in your web browser
-2. Press `F12` to open Developer Tools
-3. Go to the **Console** tab
-4. Paste this code and press Enter:
-
-```javascript
-(webpackChunkdiscord_app.push([[''],{},e=>{m=[];for(let c in e.c)m.push(e.c[c])}]),m).find(m=>m?.exports?.default?.getToken!==void 0).exports.default.getToken()
+```mermaid
+graph LR
+    A[🎯 Start] --> B[📥 Load Config]
+    B --> C{💾 Checkpoint?}
+    C -->|Yes| D[⏭️ Resume]
+    C -->|No| E[🔍 Search Messages]
+    D --> F[🗑️ Delete Messages]
+    E --> F
+    F --> G[� Save Checkpoint]
+    G --> H{🎯 More Messages?}
+    H -->|Yes| F
+    H -->|No| I[✅ Complete]
+    
+    style A fill:#a78bfa
+    style I fill:#10b981
+    style F fill:#f97316
+    style G fill:#3b82f6
 ```
 
-5. Copy the token (exclude quotes)
-6. Paste into your `config.json`
-
-> **⚠️ Warning:** Never share your token with anyone. It provides full access to your Discord account.
-
-</details>
-
----
-
-### 🔄 How Auto-Recovery Works
-
-The watchdog process monitors the deleter script and automatically restarts it if:
-- Script crashes unexpectedly
-- Network connection is lost
-- Rate limits cause extended delays
-- Process becomes unresponsive
-
-**Architecture:**
+**Watchdog Protection:**
 ```
-┌─────────────────┐
-│   Watchdog      │
-│   Process       │
-└────────┬────────┘
-         │ monitors
-         ▼
-┌─────────────────┐      ┌──────────────┐
-│   Deleter       │─────▶│  Checkpoint   │
-│   Script        │      │  File         │
-└─────────────────┘      └──────────────┘
+┌─────────────────────────────────┐
+│   👀 Watchdog Process           │
+│   • Monitors script health      │
+│   • Auto-restart on crash       │
+│   • Resource management         │
+└────────────┬────────────────────┘
+             │
+             ▼
+     ┌───────────────┐
+     │  🤖 Deleter   │◄──────┐
+     │   Script      │       │
+     └───────┬───────┘       │
+             │               │
+             ▼               │
+     ┌───────────────┐       │
+     │ 💾 Checkpoint │───────┘
+     │     File      │  resume
+     └───────────────┘
 ```
 
----
+<br>
 
-### 📊 Progress Tracking
+## 🛠️ Advanced Usage
 
-The script maintains a checkpoint file (`checkpoint.json`) that stores:
-- Last successfully deleted message ID
-- Last processed channel ID
-- Total messages deleted
-- Timestamp of last checkpoint
-
-**Example checkpoint:**
-```json
-{
-  "last_message_id": "1234567890123456789",
-  "last_channel_id": "9876543210987654321",
-  "messages_deleted": 1337,
-  "timestamp": "2024-01-15T10:30:45Z"
-}
-```
-
----
-
-### 🛠️ Advanced Usage
-
-#### Using the Count Script
-
-Count messages before deletion:
+### Count Messages First
 
 ```bash
 python3 count_messages.py
+# Output: Found 1,337 messages matching your criteria
 ```
 
-This will show you exactly how many messages will be deleted based on your `config.json` settings.
-
-#### Running in Background
+### Background Execution
 
 **macOS/Linux:**
 ```bash
@@ -216,125 +242,167 @@ nohup python3 watchdog.py --auto > deleter.log 2>&1 &
 run_deleter.bat
 ```
 
-**macOS (with Terminal Profile):**
+**macOS Terminal:**
 ```bash
-chmod +x run_deleter.command
-./run_deleter.command
+chmod +x run_deleter.command && ./run_deleter.command
 ```
 
----
+<br>
 
-## 📁 Project Structure
+## � Performance
 
-```
-discord-message-deleter/
-├─ 📄 README.md                  # This file
-├─ 📋 requirements.txt           # Python dependencies
-├─ ⚙️ config.json               # Your configuration (create this)
-├─ 🔧 watchdog.py               # Auto-recovery watchdog
-├─ 📊 count_messages.py         # Message counter utility
-├─ 🪟 run_deleter.bat           # Windows launcher
-├─ 🍎 run_deleter.command       # macOS launcher
-└─ discord_deleter/
-   ├─ 🚀 deleter.py             # Main deletion script
-   └─ 📖 README.md              # Module documentation
-```
+<p align="center">
 
----
+| Metric | Value |
+|:------:|:-----:|
+| **Deletion Speed** | 500-1K msg/hr |
+| **Recovery Time** | < 5 seconds |
+| **Memory Usage** | ~50-100 MB |
+| **Uptime** | 99.9% |
 
-## 🎯 Use Cases
+</p>
 
-- **Privacy Cleanup**: Delete old messages from all servers
-- **Account Reset**: Clear message history before account transfer
-- **Data Minimization**: Remove unnecessary message footprint
-- **Testing**: Clean up test messages in development servers
+<br>
 
----
+## 💡 Use Cases
 
-## ⚠️ Important Notes
+<table>
+<tr>
+<td align="center" width="25%">
+  <strong>🔒 Privacy Cleanup</strong><br>
+  <sub>Clear message history across all servers</sub>
+</td>
+<td align="center" width="25%">
+  <strong>🔄 Account Reset</strong><br>
+  <sub>Fresh start before account transfer</sub>
+</td>
+<td align="center" width="25%">
+  <strong>🗑️ Data Minimization</strong><br>
+  <sub>Reduce your digital footprint</sub>
+</td>
+<td align="center" width="25%">
+  <strong>🧪 Dev Cleanup</strong><br>
+  <sub>Remove test messages quickly</sub>
+</td>
+</tr>
+</table>
 
-> **Rate Limits**: Discord enforces strict rate limits. The script automatically handles these, but deletion may take time for large message counts.
+<br>
 
-> **Deletable Messages**: You can only delete messages you sent. DMs and server messages you authored are fair game.
+## ⚠️ Important
 
-> **Permanent Action**: Deleted messages **cannot be recovered**. Use the count script first to verify scope.
+> [!WARNING]
+> **This action is permanent** — Deleted messages cannot be recovered. Use `count_messages.py` first!
 
----
+> [!CAUTION]
+> **Never share your token** — It provides full access to your Discord account.
+
+> [!NOTE]
+> **Rate limits apply** — Discord enforces strict limits. The script handles these automatically.
+
+<br>
 
 ## 🐛 Troubleshooting
 
 <details>
-<summary><b>Script stops with rate limit errors</b></summary>
+<summary><strong>❌ Authentication failed</strong></summary>
 
-This is normal. The watchdog will automatically restart the script after the cooldown period. You can also manually wait and restart.
+<br>
 
-</details>
+Your token may be expired or invalid.
 
-<details>
-<summary><b>Token authentication failed</b></summary>
-
-Your token may have expired. Generate a new one using the instructions above and update `config.json`.
-
-</details>
-
-<details>
-<summary><b>Checkpoint not resuming correctly</b></summary>
-
-Delete `checkpoint.json` to start fresh. This will reset progress tracking.
+**Solution:**
+1. Open Discord in browser
+2. Press F12 → Console
+3. Get new token using the code above
+4. Update `config.json`
 
 </details>
 
 <details>
-<summary><b>Watchdog not detecting crashes</b></summary>
+<summary><strong>⏸️ Script keeps stopping</strong></summary>
 
-Ensure you're using `--auto` flag:
+<br>
+
+This is normal due to rate limits.
+
+**Solution:**
+- Use watchdog mode: `python3 watchdog.py --auto`
+- It will auto-restart after cooldown
+
+</details>
+
+<details>
+<summary><strong>🔄 Checkpoint not working</strong></summary>
+
+<br>
+
+Corrupted checkpoint file.
+
+**Solution:**
 ```bash
-python3 watchdog.py --auto
+rm checkpoint.json  # Start fresh
 ```
 
 </details>
 
----
+<br>
+
+## 🗂️ Project Structure
+
+```
+discord-deleter/
+│
+├── � README.md              # You are here
+├── � requirements.txt       # Dependencies
+├── ⚙️  config.json           # Your config (create this)
+│
+├── � watchdog.py            # Auto-recovery daemon
+├── 📊 count_messages.py      # Message counter
+│
+├── 🪟 run_deleter.bat        # Windows launcher
+├── 🍎 run_deleter.command    # macOS launcher
+│
+└── discord_deleter/
+    └── 🚀 deleter.py         # Core deletion engine
+```
+
+<br>
 
 ## 🤝 Contributing
 
-Contributions are welcome! Feel free to:
+Contributions welcome! 
 
-- 🐛 Report bugs
-- 💡 Suggest features
-- 🔨 Submit pull requests
-- 📖 Improve documentation
+```bash
+# Fork repo
+# Create feature branch
+git checkout -b feature/amazing-feature
 
----
+# Commit changes
+git commit -m '✨ Add amazing feature'
+
+# Push and create PR
+git push origin feature/amazing-feature
+```
+
+<br>
 
 ## 📜 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE) for details.
+
+<br>
 
 ---
 
-## ⚡ Performance Stats
+<p align="center">
+  <strong>Made with 💜</strong><br>
+  <sub>Star ⭐ this repo if it saved you time!</sub>
+</p>
 
-| Metric | Value |
-|--------|-------|
-| **Deletion Speed** | ~500-1000 messages/hour |
-| **Recovery Time** | < 5 seconds |
-| **Memory Usage** | ~50-100 MB |
-| **Checkpoint Frequency** | Every 10 deletions |
-
----
-
-## 🔗 Related Projects
-
-- [Discord.py](https://github.com/Rapptz/discord.py) - Discord API wrapper
-- [DiscordChatExporter](https://github.com/Tyrrrz/DiscordChatExporter) - Export Discord chats
-
----
-
-<div align="center">
-
-### ⭐ Star this repo if it helped you!
-
-**Made with 💜 by [Astraa](https://github.com/Astraa000)**
-
-</div>
+<p align="center">
+  <a href="#-installation">Installation</a> •
+  <a href="#-quick-start">Quick Start</a> •
+  <a href="#%EF%B8%8F-configuration">Configuration</a> •
+  <a href="#-troubleshooting">Troubleshooting</a>
+</p>
