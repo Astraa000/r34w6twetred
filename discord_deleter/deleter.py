@@ -1,0 +1,858 @@
+import random
+import requests
+import time
+import sys
+import os
+import json
+from datetime import datetime
+from collections import Counter
+from colorama import init, Fore, Style
+
+# Initialize colorama
+init(autoreset=True)
+
+# MODERN BALANCED THEME
+PRIMARY = Fore.WHITE + Style.BRIGHT  # Headers only
+SECONDARY = Fore.WHITE               # Regular text
+ACCENT = Fore.CYAN                   # Soft cyan
+SUCCESS = Fore.GREEN                 # Soft green
+ERROR = Fore.RED + Style.BRIGHT      # Errors stay bright
+WARN = Fore.YELLOW                   # Soft yellow
+INFO = Fore.LIGHTBLACK_EX            # Subtle
+RESET = Style.RESET_ALL
+
+# Global Session
+session = requests.Session()
+
+# User-Agent Pool for rotation (anti-detection)
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+]
+
+# Set random initial user agent
+session.headers.update({"User-Agent": random.choice(USER_AGENTS)})
+
+# Retry Configuration
+MAX_RETRIES = 10
+INITIAL_BACKOFF = 2
+MAX_BACKOFF = 300  # 5 minutes max
+
+# Adaptive Speed Configuration - Optimized for Discord's limits
+DELAY_MIN = 0.05
+DELAY_MAX = 0.15
+BREAK_AFTER_MIN = 50000
+BREAK_AFTER_MAX = 100000
+BREAK_DURATION_MIN = 5
+BREAK_DURATION_MAX = 10
+BATCH_READ_DELAY_MIN = 0.2
+BATCH_READ_DELAY_MAX = 0.4
+UA_ROTATE_EVERY = 75  # Rotate user agent every N requests
+
+# Global counters
+request_count = 0
+last_break_at = 0
+
+def get_timestamp():
+    """Get current timestamp for logging"""
+    return datetime.now().strftime("%H:%M:%S")
+
+def set_adaptive_speed(total_messages):
+    """Set deletion speed based on total message count - MAXIMUM SPEED"""
+    global DELAY_MIN, DELAY_MAX, BATCH_READ_DELAY_MIN, BATCH_READ_DELAY_MAX
+    
+    if total_messages > 10000:
+        DELAY_MIN, DELAY_MAX = 0.05, 0.15  # Optimized for Discord's limits
+        BATCH_READ_DELAY_MIN, BATCH_READ_DELAY_MAX = 0.2, 0.4
+        speed_desc = "Maximum Discord Speed (~27-30/min)"
+    elif total_messages > 5000:
+        DELAY_MIN, DELAY_MAX = 0.05, 0.15
+        BATCH_READ_DELAY_MIN, BATCH_READ_DELAY_MAX = 0.2, 0.4
+        speed_desc = "Fast (~30-35/min)"
+    else:
+        DELAY_MIN, DELAY_MAX = 0.1, 0.2
+        BATCH_READ_DELAY_MIN, BATCH_READ_DELAY_MAX = 0.2, 0.4
+        speed_desc = "Standard (~25-30/min)"
+    
+    print(f"{INFO}⚡ Speed: {speed_desc} mode ({total_messages:,} messages){RESET}")
+
+def rotate_user_agent():
+    """Rotate to a random user agent"""
+    global request_count
+    request_count += 1
+    
+    if request_count % UA_ROTATE_EVERY == 0:
+        new_ua = random.choice(USER_AGENTS)
+        session.headers.update({"User-Agent": new_ua})
+
+def human_delay():
+    """Sleep for a random human-like duration"""
+    delay = random.uniform(DELAY_MIN, DELAY_MAX)
+    time.sleep(delay)
+
+def batch_reading_delay():
+    """Simulate human reading message batch"""
+    delay = random.uniform(BATCH_READ_DELAY_MIN, BATCH_READ_DELAY_MAX)
+    time.sleep(delay)
+
+def check_break_time(deletion_count):
+    """Check if it's time for a human-like break"""
+    global last_break_at
+    
+    if last_break_at == 0:
+        last_break_at = random.randint(BREAK_AFTER_MIN, BREAK_AFTER_MAX)
+    
+    if deletion_count >= last_break_at:
+        break_duration = random.randint(BREAK_DURATION_MIN, BREAK_DURATION_MAX)
+        print(f"{WARN}[{get_timestamp()}] Pausing for {break_duration}s{RESET}")
+        time.sleep(break_duration)
+        # Set next break point
+        last_break_at = deletion_count + random.randint(BREAK_AFTER_MIN, BREAK_AFTER_MAX)
+        print(f"{SUCCESS}[{get_timestamp()}] Resuming deletion process{RESET}")
+
+def save_checkpoint(last_id):
+    """Save last processed message ID for resume capability"""
+    try:
+        cfg = load_config()
+        cfg["last_message_id"] = last_id
+        with open("config.json", "w") as f:
+            json.dump(cfg, f, indent=4)
+    except:
+        pass
+
+def get_checkpoint():
+    """Get last processed message ID"""
+    cfg = load_config()
+    return cfg.get("last_message_id", None)
+
+def clear_checkpoint():
+    """Clear checkpoint when deletions complete"""
+    try:
+        cfg = load_config()
+        if "last_message_id" in cfg:
+            del cfg["last_message_id"]
+            with open("config.json", "w") as f:
+                json.dump(cfg, f, indent=4)
+    except:
+        pass
+
+def fetch_with_retry(url, params=None, max_retries=MAX_RETRIES):
+    """
+    Robust API fetch with exponential backoff and comprehensive error handling
+    Returns: (success: bool, data: dict/list or None, error_message: str or None)
+    """
+    retries = 0
+    backoff = INITIAL_BACKOFF
+    
+    while retries < max_retries:
+        try:
+            r = session.get(url, params=params, timeout=30)
+            
+            # Success
+            if r.status_code == 200:
+                try:
+                    return (True, r.json(), None)
+                except json.JSONDecodeError:
+                    print(f"{ERROR}[{get_timestamp()}] JSON parse error. Retrying...{RESET}")
+                    retries += 1
+                    time.sleep(backoff)
+                    backoff = min(backoff * 2, MAX_BACKOFF)
+                    continue
+            
+            # Rate limit - use Discord's suggested wait time
+            elif r.status_code == 429:
+                try:
+                    retry_after = r.json().get('retry_after', backoff)
+                except:
+                    retry_after = backoff
+                
+                # Cap at 60 seconds to prevent infinite hangs
+                if retry_after > 60:
+                    print(f"{ERROR}[{get_timestamp()}] Rate limit too long ({retry_after:.1f}s). This may indicate detection. Capping at 60s.{RESET}")
+                    retry_after = 60
+                    retries += 1  # Count extreme rate limits as retries
+                    if retries >= max_retries:
+                        return (False, None, f"Rate limited excessively {max_retries} times")
+                
+                print(f"{WARN}[{get_timestamp()}] Rate limited. Waiting {retry_after:.1f}s...{RESET}")
+                time.sleep(retry_after)
+                continue  # Don't count normal rate limits as retries
+            
+            # Auth failures - don't retry, these won't fix themselves
+            elif r.status_code in [401, 403]:
+                error_msg = f"Auth Error {r.status_code}: Token may be invalid or expired"
+                return (False, None, error_msg)
+            
+            # Not found - return empty
+            elif r.status_code == 404:
+                return (True, [], None)
+            
+            # Server errors - retry with backoff
+            elif r.status_code >= 500:
+                print(f"{ERROR}[{get_timestamp()}] Server error {r.status_code}. Retry {retries+1}/{max_retries} in {backoff}s...{RESET}")
+                retries += 1
+                time.sleep(backoff)
+                backoff = min(backoff * 2, MAX_BACKOFF)
+                continue
+            
+            # Other errors
+            else:
+                print(f"{ERROR}[{get_timestamp()}] Unexpected status {r.status_code}. Retry {retries+1}/{max_retries}...{RESET}")
+                retries += 1
+                time.sleep(backoff)
+                backoff = min(backoff * 2, MAX_BACKOFF)
+                continue
+                
+        except requests.exceptions.Timeout:
+            print(f"{ERROR}[{get_timestamp()}] Request timeout. Retry {retries+1}/{max_retries}...{RESET}")
+            retries += 1
+            time.sleep(backoff)
+            backoff = min(backoff * 2, MAX_BACKOFF)
+            
+        except requests.exceptions.ConnectionError:
+            print(f"{ERROR}[{get_timestamp()}] Connection error. Retry {retries+1}/{max_retries} in {backoff}s...{RESET}")
+            retries += 1
+            time.sleep(backoff)
+            backoff = min(backoff * 2, MAX_BACKOFF)
+            
+        except Exception as e:
+            print(f"{ERROR}[{get_timestamp()}] Unexpected error: {str(e)}. Retry {retries+1}/{max_retries}...{RESET}")
+            retries += 1
+            time.sleep(backoff)
+            backoff = min(backoff * 2, MAX_BACKOFF)
+    
+    return (False, None, f"Max retries ({max_retries}) exceeded")
+
+def print_first_message_link(channel_id):
+    try:
+        r_msg = session.get(f"https://discord.com/api/v9/channels/{channel_id}/messages?after=0&limit=1")
+        if r_msg.status_code == 200:
+            msgs = r_msg.json()
+            if msgs:
+                link = f"https://discord.com/channels/@me/{channel_id}/{msgs[0]['id']}"
+                print(f"{SECONDARY}First Message: {link}{RESET}")
+    except: pass
+
+# REMOVED: analyze_chat_content - analysis report feature removed
+
+def format_time_estimate(minutes):
+    """Format time estimate in human-readable form"""
+    hours = int(minutes // 60)
+    mins = int(minutes % 60)
+    
+    if hours > 0:
+        return f"{hours}h {mins}m"
+    else:
+        return f"{mins}m"
+
+# REMOVED: analyze_chat_content(all_text):
+    if not all_text: return [], [], "Neutral"
+    
+    # 1. Top Words (Filter stops)
+    stops = {"the", "and", "to", "i", "a", "of", "in", "it", "you", "is", "that", "for", "on", "was", "me", "my", "your", "so", "but", "are", "have", "with", "just", "be", "at", "not", "do", "like", "im", "what", "if", "its", "no", "id", "up", "out", "can", "they", "we", "he", "she"}
+    words = [w.lower() for w in all_text.split() if w.lower() not in stops and len(w) > 2]
+    top_words = Counter(words).most_common(5)
+    
+    # 2. Vibe Check (Simple Keyword Matching)
+    vibes = []
+    text_lower = all_text.lower()
+    
+    # Argument Detection
+    if "wtf" in text_lower or "shut up" in text_lower or "fuck" in text_lower or "hate" in text_lower:
+        vibes.append("High Voltage / Arguments Detected ⚡")
+    
+    # Love/Simp Detection
+    if "love" in text_lower or "miss you" in text_lower or "<3" in text_lower:
+        vibes.append("Romantic / Simp Vibes ❤️")
+        
+    # Laughs
+    if "lol" in text_lower or "lmao" in text_lower or "haha" in text_lower:
+        vibes.append("Good Vibes / Funny 😂")
+        
+    final_vibe = "Neutral / Casual"
+    if vibes: final_vibe = " | ".join(vibes)
+    
+    return top_words, final_vibe
+
+def print_report_card(my_count, their_count, first_msg_date, last_msg_date, top_words, vibe):
+    total = my_count + their_count
+    if total == 0: return
+
+    # Calculate Days
+    try:
+        start = datetime.strptime(first_msg_date[:10], "%Y-%m-%d")
+        end = datetime.strptime(last_msg_date[:10], "%Y-%m-%d")
+        days = (end - start).days
+        if days == 0: days = 1
+    except:
+        days = 1
+
+    # Ratios
+    my_percent = (my_count / total) * 100
+    their_percent = (their_count / total) * 100
+
+    # Verdict
+    verdict = "Balanced Communication"
+    if my_percent > 65: verdict = "High User Activity (65%+ sent by you)"
+    elif my_percent < 35: verdict = "Low User Activity (65%+ sent by them)"
+    
+    print(f"\n{PRIMARY}ANALYSIS REPORT{RESET}")
+    print(f"{SECONDARY}" + "-"*35 + f"{RESET}")
+    print(f"{ACCENT}Duration:{RESET}      {days} Days")
+    print(f"{ACCENT}Total Msgs:{RESET}    {total}")
+    print(f"{ACCENT}You Sent:{RESET}      {my_count} ({my_percent:.1f}%)")
+    print(f"{ACCENT}They Sent:{RESET}     {their_count} ({their_percent:.1f}%)")
+    print(f"{SECONDARY}" + "-"*35 + f"{RESET}")
+    print(f"{WARN}TOP TOPICS:{RESET}")
+    for word, count in top_words:
+        print(f" - {word} ({count})")
+    print(f"{SECONDARY}" + "-"*35 + f"{RESET}")
+    print(f"{WARN}VIBE CHECK:{RESET} {vibe}")
+    print(f"{WARN}VERDICT:{RESET}    {verdict}")
+    print(f"{SECONDARY}" + "-"*35 + f"{RESET}")
+
+def quick_count_messages(channel_id, user_id, checkpoint=None):
+    """Quickly count remaining messages without deleting"""
+    print(f"\n{ACCENT}[{get_timestamp()}] Quick scan: Counting remaining messages...{RESET}")
+    base_url = f"https://discord.com/api/v9/channels/{channel_id}/messages"
+    count = 0
+    last_id = checkpoint
+    
+    while True:
+        params = {"limit": 100}
+        if last_id: params["before"] = last_id
+        
+        success, messages, error = fetch_with_retry(base_url, params=params)
+        
+        if not success or not messages:
+            break
+        
+        # Count only user's messages
+        user_messages = [m for m in messages if m['author']['id'] == str(user_id)]
+        count += len(user_messages)
+        last_id = messages[-1]['id']
+        
+        # Show progress
+        if count % 100 == 0:
+            print(f"\r{INFO}Counted {count} messages...{RESET}", end="")
+            sys.stdout.flush()
+        
+        time.sleep(0.05)  # Faster counting
+    
+    print(f"\r{SUCCESS}[{get_timestamp()}] Found {count} messages to delete{RESET}")
+    return count
+
+def scan_and_delete(channel_id, user_id, auto_mode=False):
+    print(f"{SECONDARY}[{get_timestamp()}] Targeting User: {user_id}")
+    print(f"{SECONDARY}[{get_timestamp()}] Channel Context: {channel_id}")
+    print_first_message_link(channel_id)
+    print(f"{SECONDARY}" + "-"*40)
+    
+    # Check for checkpoint (resume capability)
+    checkpoint = get_checkpoint()
+    if checkpoint:
+        print(f"{ACCENT}[{get_timestamp()}] Found checkpoint: Resuming from message {checkpoint}{RESET}")
+    
+    # Mode Selection with Metrics
+    if auto_mode:
+        mode = "2"  # Always use Turbo Stream in auto mode
+        print(f"{ACCENT}[AUTO MODE] Using Turbo Stream{RESET}")
+        
+        # Quick count before deletion
+        total_to_delete = quick_count_messages(channel_id, user_id, checkpoint)
+        
+        if total_to_delete > 0:
+            # Calculate ETA (estimate 200 msgs/min as target rate)
+            estimated_rate = 200
+            estimated_minutes = total_to_delete / estimated_rate
+            hours = int(estimated_minutes // 60)
+            minutes = int(estimated_minutes % 60)
+            
+            if hours > 0:
+                eta_str = f"{hours}h {minutes}m"
+            else:
+                eta_str = f"{minutes}m"
+            
+            print(f"{PRIMARY}[{get_timestamp()}] Estimated time: {eta_str} at ~{estimated_rate} msgs/min{RESET}")
+            print(f"{ACCENT}[{get_timestamp()}] Starting deletion process...{RESET}\n")
+        else:
+            print(f"{SUCCESS}[{get_timestamp()}] No messages to delete!{RESET}")
+            return
+    else:
+        print(f"\n{PRIMARY}OPERATIONAL MODES:{RESET}")
+        print(f" 1. {PRIMARY}Audit & Purge{RESET}        {SECONDARY}(Scans first, then deletes){RESET}")
+        print(f" 2. {PRIMARY}Turbo Stream{RESET}         {SECONDARY}(Immediate deletion | ~150 msgs/min){RESET}")
+        mode = input(f"\n{ACCENT}SELECT OPTION [1/2]: {RESET}").strip()
+    
+    base_url = f"https://discord.com/api/v9/channels/{channel_id}/messages"
+    start_time = time.time()
+
+    if mode == "1":
+        # PHASE 1: Scan
+        print(f"\n{PRIMARY}[{get_timestamp()}] SCANNING ARCHIVE...{RESET}")
+        targets = []
+        last_id = None
+        
+        # Stats Tracking
+        my_msgs = 0
+        their_msgs = 0
+        first_ts = None
+        last_ts = None
+        all_text_content = []
+        
+        while True:
+            params = {"limit": 100}
+            if last_id: params["before"] = last_id
+            
+            success, messages, error = fetch_with_retry(base_url, params=params)
+            
+            if not success:
+                print(f"{ERROR}[{get_timestamp()}] Scan failed: {error}{RESET}")
+                if "Auth Error" in str(error):
+                    print(f"{ERROR}[{get_timestamp()}] CRITICAL: Token invalid. Exiting.{RESET}")
+                    return
+                print(f"{WARN}[{get_timestamp()}] Continuing with scanned messages...{RESET}")
+                break
+            
+            if not messages: break
+             
+            # Update Timestamps (Batch is Newest -> Oldest)
+            if not last_ts: last_ts = messages[0]['timestamp'] 
+            first_ts = messages[-1]['timestamp']
+
+            for msg in messages:
+                # Store content for analysis (Top Words)
+                content = msg.get('content', '')
+                if content: all_text_content.append(content)
+
+                if msg['author']['id'] == str(user_id):
+                    targets.append(msg['id'])
+                    my_msgs += 1
+                else:
+                    their_msgs += 1
+            
+            last_id = messages[-1]['id']
+            print(f"\r{INFO} - Analyzed {my_msgs + their_msgs} messages...{RESET}", end="")
+            sys.stdout.flush()
+            time.sleep(0.4)
+
+        print(f"\n{PRIMARY}[{get_timestamp()}] SCAN COMPLETE.{RESET}")
+        
+        # DISPLAY REPORT CARD
+        if first_ts and last_ts:
+            full_text = " ".join(all_text_content)
+            top_words, vibe = analyze_chat_content(full_text)
+            print_report_card(my_msgs, their_msgs, first_ts, last_ts, top_words, vibe)
+        
+        print(f"\n[{get_timestamp()}] Targets to Delete: {len(targets)}")
+        if len(targets) == 0:
+            clear_checkpoint()
+            return
+
+        if auto_mode:
+            confirm = 'y'
+            print(f"{ACCENT}[AUTO MODE] Auto-confirming deletion{RESET}")
+        else:
+            confirm = input(f"{ACCENT}CONFIRM DELETION? [y/N]: {RESET}").strip().lower()
+        if confirm != 'y':
+            sys.exit(2)  # Exit code 2 = user cancelled
+        
+        # Phase 2: Delete
+        print(f"\n{PRIMARY}[{get_timestamp()}] INITIALIZING PURGE SEQUENCE...{RESET}")
+        deletion_count = 0
+        for i, msg_id in enumerate(targets):
+            if process_deletion(channel_id, msg_id):
+                deletion_count += 1
+                update_stats(1)
+                
+                # Check for break time
+                check_break_time(deletion_count)
+                
+                # Rotate user agent periodically
+                rotate_user_agent()
+                
+                # Heartbeat every 50 deletions
+                if deletion_count % 50 == 0:
+                    elapsed = time.time() - start_time
+                    rate = (deletion_count / elapsed) * 60 if elapsed > 0 else 0
+                    print(f"{SUCCESS}[{get_timestamp()}] Progress: {deletion_count}/{len(targets)} deleted ({rate:.1f} msgs/min){RESET}")
+            
+            # Human-like delay instead of fixed
+            human_delay()
+
+    else:
+        # STREAM DELETE
+        print(f"\n{PRIMARY}[{get_timestamp()}] INITIALIZING TURBO PURGE...{RESET}")
+        last_id = checkpoint if checkpoint else None  # Resume from checkpoint
+        deletion_count = 0
+        consecutive_empty = 0
+        
+        # Per-minute tracking
+        last_minute_time = time.time()
+        deletions_this_minute = 0
+        
+        while True:
+            params = {"limit": 100}
+            if last_id: params["before"] = last_id
+            
+            print(f"{SECONDARY}[{get_timestamp()}] Fetching batch (before: {last_id or 'latest'})...{RESET}")
+            success, messages, error = fetch_with_retry(base_url, params=params)
+            
+            if not success:
+                print(f"{ERROR}[{get_timestamp()}] Fetch failed: {error}{RESET}")
+                if "Auth Error" in str(error):
+                    print(f"{ERROR}[{get_timestamp()}] CRITICAL: Token invalid. Exiting.{RESET}")
+                    break
+                print(f"{WARN}[{get_timestamp()}] Retrying batch fetch...{RESET}")
+                time.sleep(5)
+                continue
+            
+            if not messages:
+                consecutive_empty += 1
+                if consecutive_empty >= 3:
+                    print(f"{SUCCESS}[{get_timestamp()}] No more messages found. Deletion complete.{RESET}")
+                    clear_checkpoint()  # Clear checkpoint on completion
+                    break
+                else:
+                    print(f"{SECONDARY}[{get_timestamp()}] Empty batch {consecutive_empty}/3, verifying...{RESET}")
+                    time.sleep(2)
+                    continue
+            else:
+                consecutive_empty = 0
+            
+            # Simulate human reading the batch
+            batch_reading_delay()
+            
+            # Filter for user's messages
+            batch = [m for m in messages if m['author']['id'] == str(user_id)]
+            
+            if not batch:
+                # No messages from user in this batch, continue to older messages
+                if messages:
+                    last_id = messages[-1]['id']
+                    save_checkpoint(last_id)  # Save progress
+                    batch_reading_delay()  # Simulate reading even empty batches
+                continue
+            
+            
+            
+            batch_deletions = 0  # Track successful deletions in this batch
+            for msg in batch:
+                if process_deletion(channel_id, msg['id']):
+                    deletion_count += 1
+                    batch_deletions += 1
+                    deletions_this_minute += 1
+                    update_stats(1)
+                    
+                    # Save checkpoint every 10 deletions for better recovery
+                    if deletion_count % 10 == 0:
+                        save_checkpoint(msg['id'])
+                    
+                    # Check for break time
+                    check_break_time(deletion_count)
+                    
+                    # Rotate user agent periodically
+                    rotate_user_agent()
+                    
+                    # Per-minute progress report
+                    current_time = time.time()
+                    if current_time - last_minute_time >= 60:
+                        elapsed = time.time() - start_time
+                        overall_rate = (deletion_count / elapsed) * 60 if elapsed > 0 else 0
+                        print(f"{ACCENT}[{get_timestamp()}] Last minute: {deletions_this_minute} deleted | Overall rate: {overall_rate:.1f} msgs/min{RESET}")
+                        deletions_this_minute = 0
+                        last_minute_time = current_time
+                    
+                    # Heartbeat every 50 deletions
+                    if deletion_count % 50 == 0:
+                        elapsed = time.time() - start_time
+                        rate = (deletion_count / elapsed) * 60 if elapsed > 0 else 0
+                        print(f"{SUCCESS}[{get_timestamp()}] Progress: {deletion_count} deleted ({rate:.1f} msgs/min){RESET}")
+                
+                # Human-like delay
+                human_delay()
+            
+            # CRITICAL: Always update last_id to move to next batch, even if all deletions failed
+            # This prevents infinite loops when hitting old messages that return 403 Forbidden
+            if messages:
+                last_id = messages[-1]['id']
+                save_checkpoint(last_id)  # Save progress after each batch
+            
+            # If we had a batch of user messages but none deleted (all forbidden), log it
+            if len(batch) > 0 and batch_deletions == 0:
+                print(f"{WARN}[{get_timestamp()}] Warning: Entire batch ({len(batch)} msgs) was Forbidden - likely too old. Moving to next batch...{RESET}")
+
+    elapsed = time.time() - start_time
+    elapsed_min = elapsed / 60
+    print(f"\n{SUCCESS}[{get_timestamp()}] INITIAL DELETION SEQUENCE COMPLETED.{RESET}")
+    print(f"{SUCCESS}Total Deleted: {deletion_count} messages in {elapsed_min:.1f} minutes{RESET}")
+    
+    # VERIFICATION: Run 2 complete scans to catch any missed messages
+    print(f"\n{PRIMARY}[{get_timestamp()}] STARTING VERIFICATION SCANS...{RESET}")
+    print(f"{ACCENT}Running 2 complete scans to ensure no messages were missed{RESET}\n")
+    
+    total_found_in_verif = 0
+    for scan_num in range(1, 3):
+        print(f"{ACCENT}[{get_timestamp()}] --- Verification Scan #{scan_num}/2 ---{RESET}")
+        
+        # Count remaining messages
+        remaining = quick_count_messages(channel_id, user_id, checkpoint=None)
+        
+        if remaining > 0:
+            print(f"{WARN}[{get_timestamp()}] Found {remaining} missed messages! Deleting...{RESET}")
+            total_found_in_verif += remaining
+            
+            # Delete the missed messages
+            last_id_verif = None
+            verif_deleted = 0
+            
+            while True:
+                params = {"limit": 100}
+                if last_id_verif: params["before"] = last_id_verif
+                
+                success, messages, error = fetch_with_retry(base_url, params=params)
+                if not success or not messages:
+                    break
+                
+                batch = [m for m in messages if m['author']['id'] == str(user_id)]
+                if not batch:
+                    if messages:
+                        last_id_verif = messages[-1]['id']
+                    continue
+                
+                for msg in batch:
+                    if process_deletion(channel_id, msg['id']):
+                        verif_deleted += 1
+                        update_stats(1)
+                    human_delay()
+                
+                if messages:
+                    last_id_verif = messages[-1]['id']
+                
+                if not batch:
+                    break
+            
+            print(f"{SUCCESS}[{get_timestamp()}] Scan #{scan_num}: Deleted {verif_deleted} missed messages{RESET}")
+        else:
+            print(f"{SUCCESS}[{get_timestamp()}] Scan #{scan_num}: No messages found ✓{RESET}")
+    
+    print(f"\n{'='*60}")
+    print(f"{PRIMARY}╔═══════════════════════════════════════════════════════╗{RESET}")
+    print(f"{PRIMARY}║                                                       ║{RESET}")
+    print(f"{PRIMARY}║{SUCCESS}          ✓ DELETION 100% COMPLETE ✓              {PRIMARY}║{RESET}")
+    print(f"{PRIMARY}║                                                       ║{RESET}")
+    print(f"{PRIMARY}╚═══════════════════════════════════════════════════════╝{RESET}")
+    print(f"{'='*60}")
+    print(f"{SUCCESS}Total messages deleted (this session): {deletion_count + total_found_in_verif:,}{RESET}")
+    print(f"{SUCCESS}Verification scans completed: 2/2{RESET}")
+    print(f"{SUCCESS}Status: ALL MESSAGES SUCCESSFULLY DELETED{RESET}")
+    print(f"{'='*60}\n")
+
+def process_deletion(channel_id, msg_id):
+    """
+    Attempt to delete a single message with retry logic
+    Returns True if deleted successfully, False otherwise
+    """
+    url = f"https://discord.com/api/v9/channels/{channel_id}/messages/{msg_id}"
+    retries = 0
+    backoff = INITIAL_BACKOFF
+    max_retries = 5  # Lower retry count for individual deletions
+    
+    while retries < max_retries:
+        try:
+            r = session.delete(url, timeout=30)
+            
+            # Success cases
+            if r.status_code in [204, 404]:
+                # 204 = deleted, 404 = already deleted
+                msg_link = f"https://discord.com/channels/@me/{channel_id}/{msg_id}"
+                print(f"{INFO}[{get_timestamp()}] Deleted: {msg_link}{RESET}")
+                return True
+            
+            # Rate limit
+            elif r.status_code == 429:
+                try:
+                    retry_after = r.json().get('retry_after', backoff)
+                except:
+                    retry_after = backoff
+                print(f"{WARN}[{get_timestamp()}] Rate limited on deletion. Pausing {retry_after:.1f}s...{RESET}")
+                time.sleep(retry_after)
+                continue  # Don't count as retry
+            
+            # Forbidden - skip this message
+            elif r.status_code == 403:
+                print(f"{ERROR}[{get_timestamp()}] Forbidden (Skipping {msg_id}){RESET}")
+                return False
+            
+            # Auth error
+            elif r.status_code == 401:
+                print(f"{ERROR}[{get_timestamp()}] Unauthorized - Token may be invalid{RESET}")
+                return False
+            
+            # Server errors - retry
+            elif r.status_code >= 500:
+                retries += 1
+                print(f"{ERROR}[{get_timestamp()}] Server error {r.status_code}. Retry {retries}/{max_retries} in {backoff}s...{RESET}")
+                time.sleep(backoff)
+                backoff = min(backoff * 2, MAX_BACKOFF)
+                continue
+            
+            # Other errors
+            else:
+                print(f"{ERROR}[{get_timestamp()}] Error {r.status_code} (Skipping){RESET}")
+                return False
+                
+        except requests.exceptions.Timeout:
+            retries += 1
+            print(f"{ERROR}[{get_timestamp()}] Timeout. Retry {retries}/{max_retries}...{RESET}")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, MAX_BACKOFF)
+            
+        except requests.exceptions.ConnectionError:
+            retries += 1
+            print(f"{ERROR}[{get_timestamp()}] Connection lost. Retry {retries}/{max_retries} in {backoff}s...{RESET}")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, MAX_BACKOFF)
+            
+        except Exception as e:
+            retries += 1
+            print(f"{ERROR}[{get_timestamp()}] Unexpected error: {str(e)}. Retry {retries}/{max_retries}...{RESET}")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, MAX_BACKOFF)
+    
+    print(f"{ERROR}[{get_timestamp()}] Failed to delete {msg_id} after {max_retries} retries{RESET}")
+    return False
+
+def clear_screen():
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+def load_config():
+    if os.path.exists("config.json"):
+        try:
+            with open("config.json", "r") as f: return json.load(f)
+        except: pass
+    return {}
+
+def save_config(token, channel_id, user_id):
+    cfg = load_config()
+    cfg.update({"token": token, "channel_id": channel_id, "user_id": user_id})
+    try:
+        with open("config.json", "w") as f:
+            json.dump(cfg, f, indent=4)
+        print(f"{SECONDARY} > Configuration saved.{RESET}")
+    except: pass
+
+def update_stats(count=1):
+    try:
+        cfg = load_config()
+        current = cfg.get("total_deleted", 0)
+        cfg["total_deleted"] = current + count
+        with open("config.json", "w") as f:
+            json.dump(cfg, f, indent=4)
+    except: pass
+
+def validate_token(token):
+    session.headers.update({"Authorization": token})
+    try:
+        r = session.get("https://discord.com/api/v9/users/@me")
+        if r.status_code == 200: return r.json()
+    except: pass
+    return None
+
+if __name__ == "__main__":
+    # Check for auto mode flag
+    auto_mode = "--auto" in sys.argv
+    
+    clear_screen()
+    cfg = load_config()
+    lifetime = cfg.get("total_deleted", 0)
+    
+    # MINIMALIST HEADER
+    print("\n")
+    print(f"{PRIMARY}   WIMQ'S DELETER {SECONDARY}| v1.0{RESET}")
+    print(f"{SECONDARY}   Professional Discord Utility{RESET}")
+    print(f"{ACCENT}   LIFETIME PURGED: {lifetime} Messages{RESET}")
+    print(f"\n{WARN}IMPORTANT LEGAL DISCLAIMER & LIABILITY NOTICE:{RESET}")
+    print(f"{SECONDARY}This software automates user account actions ('Self-Botting'), which is a violation of Discord's")
+    print(f"Terms of Service. Excessive use may result in account suspension or termination.{RESET}")
+    print(f"\n{SECONDARY}By proceeding, you acknowledge that this software is provided 'as-is', without warranty. The developers")
+    print(f"accept no liability for any account consequences, bans, or data loss. You assume full responsibility.{RESET}")
+    print("\n")
+    
+    if not auto_mode:
+        input(f"{ACCENT}PRESS ENTER TO INITIATE SETUP WIZARD >> {RESET}")
+    else:
+        print(f"{ACCENT}[AUTO MODE] Skipping setup wizard, using saved config{RESET}")
+
+    
+    config = load_config()
+    token = config.get("token", "")
+    channel_id = config.get("channel_id", "")
+    user_id = config.get("user_id", "")
+
+    if not token or not channel_id:
+        clear_screen()
+        print(f"\n{PRIMARY}   WIMQ'S DELETER {SECONDARY}| SETUP{RESET}\n")
+        
+        if not token:
+            print(f"{PRIMARY}STEP 1: AUTHENTICATION{RESET}")
+            print(f"{SECONDARY}Guide: https://www.youtube.com/watch?v=KeEp8uom4zo{RESET}")
+            token = input(f"{ACCENT}Token: {RESET}").strip()
+            
+        print(f"\n{SECONDARY}Validating credentials...{RESET}")
+        user = validate_token(token)
+        while not user:
+            print(f"{ERROR}Invalid Token.{RESET}")
+            token = input(f"{ACCENT}Retry Token: {RESET}").strip()
+            user = validate_token(token)
+        
+        clear_screen()
+        print(f"\n{PRIMARY}   WIMQ'S DELETER {SECONDARY}| SETUP{RESET}\n")
+        print(f"{SUCCESS}Authenticated: {user['username']}{RESET}\n")
+        
+        if not channel_id:
+            print(f"{PRIMARY}STEP 2: TARGET CONTEXT{RESET}")
+            print(f"{SECONDARY}Identify the DM or Channel to purge.{RESET}")
+            print(f"{SECONDARY}Action: Right-click the chat -> 'Copy Channel ID'{RESET}")
+            channel_id = input(f"{ACCENT}Channel ID: {RESET}").strip()
+            
+        clear_screen()
+        print(f"\n{PRIMARY}   WIMQ'S DELETER {SECONDARY}| SETUP{RESET}\n")
+            
+        if not user_id:
+            print(f"{PRIMARY}STEP 3: AUTHOR CONFIGURATION{RESET}")
+            print(f"{SECONDARY}Guide: https://www.youtube.com/watch?v=9jZdxTnkEe0{RESET}")
+            uid_in = input(f"{ACCENT}Please Enter Discord User ID: {RESET}").strip()
+            user_id = uid_in if uid_in else user['id']
+            
+        save_config(token, channel_id, user_id)
+        clear_screen()
+        print(f"\n{PRIMARY}   WIMQ'S DELETER {SECONDARY}| READY{RESET}\n")
+        
+    else:
+        # Returning
+        clear_screen()
+        print(f"\n{PRIMARY}   WIMQ'S DELETER {SECONDARY}| READY{RESET}\n")
+        print(f"{ACCENT}   LIFETIME PURGED: {lifetime} Messages{RESET}\n")
+        session.headers.update({"Authorization": token})
+        user = validate_token(token)
+        if not user:
+            print(f"{ERROR}Session Expired. Reset config.json.{RESET}")
+            sys.exit(1)
+        print(f"{SUCCESS}Verified Session: {user['username']}{RESET}")
+        
+    session.headers.update({"Authorization": token})
+    
+    if token and channel_id:
+        try:
+            scan_and_delete(channel_id, user_id, auto_mode=auto_mode)
+            clear_checkpoint()  # Clear checkpoint on successful completion
+            sys.exit(0)  # Exit code 0 = success
+        except KeyboardInterrupt:
+            print(f"\n{SECONDARY}Process Terminated.{RESET}")
+            sys.exit(130)  # Standard exit code for Ctrl+C
